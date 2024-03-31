@@ -1,26 +1,113 @@
-import { Injectable } from '@nestjs/common';
-import { CreateAuthDto } from './dto/create-auth.dto';
-import { UpdateAuthDto } from './dto/update-auth.dto';
+import { BadRequestException, Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
+import { CreateUserDto } from './dto/create-user.dto';
+import { LoginUserDto } from './dto/login-user.dto';
+import { User } from './entities/user-entity';
+import { JwtPayload } from './interfaces';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import * as bcrypt from 'bcrypt'
+import { JwtService } from '@nestjs/jwt';
+
+
+
 
 @Injectable()
 export class AuthService {
-  create(createAuthDto: CreateAuthDto) {
-    return 'This action adds a new auth';
+
+  constructor(
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    private readonly jwtService: JwtService,
+  ) {}
+  
+
+  async crearUsuario(createUserDto: CreateUserDto) {
+
+    try {
+
+      createUserDto.password = bcrypt.hashSync(createUserDto.password, 10);
+      createUserDto.rol = createUserDto.rol || "user";
+
+      const newUser = this.userRepository.create(createUserDto);
+      const createdUser = await this.userRepository.save(newUser);
+      return {
+        user: createdUser.nombre,
+        rut: createdUser.rut,
+        rol: createdUser.rol,
+        token: this.getJwtToken({ rut: createdUser.rut }) 
+      };
+    } catch (error) {
+      this.handleExceptions(error);
+    }
+
   }
 
-  findAll() {
-    return `This action returns all auth`;
+
+  async loginUsuario(loginUserDto: LoginUserDto) {
+
+    const { rut, password } = loginUserDto
+    const busqueda = {
+      "rut": rut
+    }
+
+    const user = await this.userRepository.findOneBy(busqueda)
+
+    if (!user)
+      throw new UnauthorizedException()
+
+    if (!bcrypt.compareSync(password, user.password))
+      throw new UnauthorizedException()
+
+      return { 
+        user: user.nombre,
+        rut: user.rut,
+        rol: user.rol,
+        token: this.getJwtToken({ rut: user.rut }) 
+      }
+    
+  }
+  
+
+  async cambiarEstadoUsuario(id: string) {
+   
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} auth`;
+
+  async cambiarPasswordUsuario(user: User, password: string) {
+    
   }
 
-  update(id: number, updateAuthDto: UpdateAuthDto) {
-    return `This action updates a #${id} auth`;
+  async getUserFromToken(user: User) {
+    
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} auth`;
+  async verUsuarios() {
+    
+  }
+
+  async verTodosUsuarios() {
+    
+  }
+
+
+
+  private getJwtToken(payload: JwtPayload) {
+    return this.jwtService.sign(payload);
+  }
+
+
+  async checkAuthStatus( user: User ){
+    return { token: this.getJwtToken({ rut: user.rut }) }
+  }
+
+
+
+  private handleExceptions(error: any) {
+    if (error.code === 11000) {
+      throw new BadRequestException(`User exists in db ${JSON.stringify(error.keyValue)}`);
+    }
+
+    console.log(error);
+    throw new InternalServerErrorException(`Can't create User - Check server logs`);
   }
 }
